@@ -18,151 +18,170 @@ namespace SchetToPdf
         {
             InitializeComponent();
         }
-        public class receipt
+        public class invoice
         {
             public int Id;
-            public string UNP;
+            public int UNP;
+            public List<sheet> Text;
+        }
+        public class sheet
+        {
+            public int Orient;// Ориентация страницы 0 - книжная, 1 - альбомная
             public List<string> Text;
         }
+        enum strInPage //кол-во строк на странице
+        {
+            Landscape = 49,
+            Portrait = 68
+        };
+
+        List<invoice> invoices = new List<invoice>();
 
         private void button1_Click(object sender, EventArgs e)
         {
             openFileDialog1.Filter = "Текстовые файлы(*.txt) | *.txt";
             if (openFileDialog1.ShowDialog() == DialogResult.Cancel)
                 return;
-            string fileNameRez = Path.GetFileNameWithoutExtension(openFileDialog1.FileName);
             string directoryRez = Path.GetDirectoryName(openFileDialog1.FileName);
-            string[] fileText = File.ReadAllLines(openFileDialog1.FileName, Encoding.GetEncoding(866));//считываем весь файл построчно
-
-            int orient;// Ориентация страницы 0 - книжная, 1 - альбомная
-            int strInPage; //кол-во строк на странице
-            if (fileNameRez.Substring(fileNameRez.Length - 1) == "_")
+            string[] allfiles = Directory.GetFiles(directoryRez, "*.txt");
+            foreach (var f in allfiles)
             {
-                orient = 1;
-                strInPage = 49;
-            }
-            else
-            {
-                orient = 0;
-                strInPage = 68;
-            }
-
-            //разбираем файл на блоки-счета
-            List<string>[] arrListString = new List<string>[0];
-            int i = -1;
-            foreach (var s in fileText)
-            {
-                if (s.Trim().Length > 0)
+                string[] fileText = File.ReadAllLines(f, Encoding.GetEncoding(866));//считываем весь файл построчно
+                int orient;// Ориентация страницы 0 - книжная, 1 - альбомная
+                if (Path.GetFileNameWithoutExtension(f).Substring(Path.GetFileNameWithoutExtension(f).Length - 1) == "_")
                 {
-                    if (s.Trim().Substring(0, 1) == "<")
+                    orient = 1;
+                }
+                else
+                {
+                    orient = 0;
+                }
+                //разбираем файл на блоки-счета
+                List<string>[] arrListString = new List<string>[0];
+                int i = -1;
+                foreach (var s in fileText)
+                {
+                    if (s.Trim().Length > 0)
                     {
-                        i++;
-                        Array.Resize(ref arrListString, i + 1);
-                        arrListString[i] = new List<string>();
-                        arrListString[i].Add(s);
+                        if (s.Trim().Substring(0, 1) == "<")
+                        {
+                            i++;
+                            Array.Resize(ref arrListString, i + 1);
+                            arrListString[i] = new List<string>();
+                            arrListString[i].Add(s);
+                        }
+                        else arrListString[i].Add(s);
                     }
                     else arrListString[i].Add(s);
                 }
-                else arrListString[i].Add(s);
-            }
-            //формируем счета
-            i = 0;
-            List<receipt> receipts = new List<receipt>();
-            foreach(var s in arrListString)
-            {
-                var id = s[0].Trim().Substring(1, 9);
-                s[0] = "";
-                receipts.Add(new receipt
+                i = 0;
+                //формируем счета
+                foreach (var s in arrListString)
                 {
-                    Id = i,
-                    UNP = id,
-                    Text = s
-                });
-                i++;
+                    var id = s[0].Trim().Substring(1, 9);
+                    s.Remove(s[0]);
+                    List<string> tempList = new List<string>();
+                    int arrSize;
+                    if (orient == 0)
+                    {
+                        arrSize = (int)strInPage.Portrait;
+                    }
+                    else
+                    {
+                        arrSize = (int)strInPage.Landscape;
+                    }
+                    //разбивка на страницы
+                    while (s.Count > 0)
+                    {
+                        string temp = "";
+                        if (s.Count > arrSize)
+                        {
+                            for (int n = 0; n < arrSize; n++)
+                            {
+                                temp += s[0] + '\r' + '\n';
+                                s.RemoveAt(0);
+                            }
+                        }
+                        else
+                        {
+                            while (s.Count > 0)
+                            {
+                                temp += s[0] + '\r' + '\n';
+                                s.RemoveAt(0);
+                            }
+                        }
+                        tempList.Add(temp);
+                    }
+                    //группировка счетов по УНП
+                    if (int.TryParse(id, out int number))
+                    {
+                        if(invoices.Exists(x => x.UNP == number))
+                        {
+                            invoices[invoices.FindIndex(x => x.UNP == number)].Text.Add(
+                                new sheet
+                                {
+                                    Orient = orient,
+                                    Text = tempList
+                                });
+                            
+                        }
+                        else
+                        {
+                            invoices.Add(new invoice
+                            {
+                                Id = i,
+                                UNP = number,
+                                Text = new List<sheet>
+                                {
+                                    new sheet
+                                    {
+                                        Orient = orient,
+                                        Text = tempList
+                                    }
+                                }
+                            });
+                        }
+                        i++;
+                    }
+                }
+
             }
             //создаем pdf'ки
-            //foreach(var s in receipts)
-            //{
-            //    Document document = new Document();
-            //    Section section = document.AddSection();
-            //    section.PageSetup.PageFormat = PageFormat.A4;//стандартный размер страницы
-            //    //Ориентация страницы зависит от последнего символа в имени файла
-            //    //name - книжная 
-            //    //name_ - альбомная
-            //    if (fileNameRez.Substring(fileNameRez.Length - 1) == "_")
-            //    {
-            //        section.PageSetup.Orientation = Orientation.Landscape;
-            //    }
-            //    else section.PageSetup.Orientation = Orientation.Portrait;
-            //    section.PageSetup.BottomMargin = 20;//нижний отступ
-            //    section.PageSetup.TopMargin = 20;//верхний отступ
-            //    section.PageSetup.LeftMargin = 25;
-            //    section.PageSetup.RightMargin = 15;
-            //    foreach (var t in s.Text)
-            //    {
-            //        Paragraph paragraph = new Paragraph();
-            //        paragraph.Format.Font.Name = "Courier New";
-            //        paragraph.Format.Font.Size = 10;
-            //        section.Add(paragraph);
-            //        paragraph.AddFormattedText(t/*.Replace(' ', Convert.ToChar("\u202F"))*/);
-            //    }
-            //    PdfDocumentRenderer pdfRenderer = new PdfDocumentRenderer(true, PdfFontEmbedding.Always);
-            //    pdfRenderer.Document = document;
-            //    pdfRenderer.RenderDocument();
-            //    pdfRenderer.PdfDocument.Save(directoryRez + @"\" + s.UNP.ToString() + '_' + fileNameRez + ".pdf");// сохраняем
-            //}
-           foreach(var s in receipts)
+            foreach(var s in invoices)
             {
                 PdfDocument document = new PdfDocument();
                 XRect rect;
-                if (orient == 0)
-                {
-                    rect = new XRect(20, 20, 570, 800);
-                }
-                else rect = new XRect(20, 20, 800, 570);
                 List<string> textList = new List<string>();
-                i = 0;
-                string tempStr = "";
-                foreach(var t in s.Text)
+                foreach (var ss in s.Text)
                 {
-                    i++;
-                    if(i%strInPage == 0)
+                    if (ss.Orient == 0)
                     {
-                        textList.Add(tempStr);
-                        tempStr = t + '\r' + '\n';
-                        continue;
+                        rect = new XRect(20, 20, 570, 800);
                     }
-                    tempStr += t + '\r' + '\n';
-                }
-                textList.Add(tempStr);
-                foreach (var tl in textList)
-                {
-                    PdfPage page = document.AddPage();
-                    if (orient == 0)
+                    else
                     {
-                        page.Orientation = PdfSharp.PageOrientation.Portrait;
+                        rect = new XRect(20, 20, 800, 570);
                     }
-                    else page.Orientation = PdfSharp.PageOrientation.Landscape;
-                    XGraphics gfx = XGraphics.FromPdfPage(page);
-                    XFont font = new XFont("Courier New", 10, XFontStyle.Regular);
-                    XTextFormatter tf = new XTextFormatter(gfx);
-                    tf.Alignment = XParagraphAlignment.Left;
-                    tf.DrawString(tl, font, XBrushes.Black, rect, XStringFormat.TopLeft);
+                    foreach(var t in ss.Text)
+                    {
+                        PdfPage page = document.AddPage();
+                        if (ss.Orient == 0)
+                        {
+                            page.Orientation = PdfSharp.PageOrientation.Portrait;
+                        }
+                        else
+                        {
+                            page.Orientation = PdfSharp.PageOrientation.Landscape;
+                        }
+                        XGraphics gfx = XGraphics.FromPdfPage(page);
+                        XFont font = new XFont("Courier New", 10, XFontStyle.Regular);
+                        XTextFormatter tf = new XTextFormatter(gfx);
+                        tf.Alignment = XParagraphAlignment.Left;
+                        tf.DrawString(t, font, XBrushes.Black, rect, XStringFormat.TopLeft);
+                    }
                 }
-                document.Save(directoryRez + @"\" + s.UNP.ToString() + '_' + fileNameRez + ".pdf");
+                document.Save(directoryRez + @"\" + s.UNP.ToString() + ".pdf");
             }
-
-            //PdfDocument document = new PdfDocument();
-            //PdfPage page = document.AddPage();
-
-            //else page.Orientation = PdfSharp.PageOrientation.Portrait;
-            //XGraphics gfx = XGraphics.FromPdfPage(page);
-            //XFont font = new XFont("Courier New", 10, XFontStyle.Regular);//Coueer New
-            //XTextFormatter tf = new XTextFormatter(gfx);
-            //tf.Alignment = XParagraphAlignment.Left;
-            //XRect rect = new XRect(20, 20, 1000, page.Height - 20);
-            //tf.DrawString(s.Text, font, XBrushes.Black, rect, XStringFormat.TopLeft);
-            //document.Save(directoryRez + @"\" + s.UNP.ToString() + '_' + fileNameRez + ".pdf");
             MessageBox.Show("Готово!", "Уведомление", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
